@@ -1,6 +1,7 @@
 use clap::{Parser, ValueEnum};
 use cicada::algo::hill_builder::HillBuilder;
 use cicada::io::audio_writer::AudioWriter;
+use cicada::io::hill_writer::write_hills_csv;
 use cicada::io::mzml_reader::MzmlReader;
 use cicada::synth::synthesizer::Synthesizer;
 use cicada::core::structs::Hill;
@@ -61,6 +62,10 @@ struct Cli {
     /// Time scaling factor (e.g., 60.0 to compress 60 mins into 1 min)
     #[arg(long, default_value_t = 1.0)]
     speed: f64,
+
+    /// Skip exporting hill data to CSV (default: hills are exported)
+    #[arg(long, default_value_t = false)]
+    no_export_hills: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -141,7 +146,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("      Built {} MS1 hills (length >= {})", hills.len(), cli.min_len);
         
         let hills = normalize_times(hills);
-        
+
+        if !cli.no_export_hills {
+            let hills_path = format!("{}_ms1_hills.csv", cli.output);
+            println!("      Exporting MS1 hills to {}...", hills_path);
+            write_hills_csv(&hills, &hills_path)?;
+        }
+
         println!("[3/5] Synthesizing MS1 Audio...");
         let synth = Synthesizer::new(sample_rate);
         let audio = synth.render(hills);
@@ -165,7 +176,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("      Built {} MS2 hills (length >= {})", hills.len(), cli.min_len);
         
         let hills = normalize_times(hills);
-        
+
+        if !cli.no_export_hills {
+            let hills_path = format!("{}_ms2_hills.csv", cli.output);
+            println!("      Exporting MS2 hills to {}...", hills_path);
+            write_hills_csv(&hills, &hills_path)?;
+        }
+
         println!("[5/5] Synthesizing MS2 Audio...");
         let synth = Synthesizer::new(sample_rate);
         let audio = synth.render(hills);
