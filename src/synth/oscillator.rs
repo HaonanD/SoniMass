@@ -85,16 +85,18 @@ impl Oscillator {
         }
     }
 
-    /// Forward Linear Mapping: Maps m/z to Frequency (Hz)
+    /// Logarithmic Mapping: Maps m/z to Frequency (Hz)
     /// Range: [300, 1000] m/z -> [30, 4200] Hz
+    /// Log scale matches human pitch perception: equal m/z intervals span equal octaves.
     fn mz_to_freq(mz: f64) -> f32 {
-        let min_mz = 300.0;
-        let max_mz = 1000.0;
-        let min_freq = 30.0;
-        let max_freq = 4200.0;
+        let min_mz = 300.0_f64;
+        let max_mz = 1000.0_f64;
+        let min_freq = 30.0_f64;
+        let max_freq = 4200.0_f64;
 
         let clamped_mz = mz.max(min_mz).min(max_mz);
-        let freq = min_freq + (max_freq - min_freq) * (clamped_mz - min_mz) / (max_mz - min_mz);
+        let t = (clamped_mz - min_mz) / (max_mz - min_mz);
+        let freq = (min_freq.ln() + t * (max_freq.ln() - min_freq.ln())).exp();
         freq as f32
     }
 }
@@ -106,10 +108,12 @@ mod tests {
 
     #[test]
     fn test_mz_mapping() {
-        let freq = Oscillator::mz_to_freq(650.0);
-        assert!((freq - 2115.0).abs() < 1.0);
+        // Boundaries are unchanged
         assert_eq!(Oscillator::mz_to_freq(300.0), 30.0);
         assert_eq!(Oscillator::mz_to_freq(1000.0), 4200.0);
+        // Midpoint (650 m/z, t=0.5) maps to geometric mean: sqrt(30 * 4200) ≈ 354 Hz
+        let freq = Oscillator::mz_to_freq(650.0);
+        assert!((freq - 354.0).abs() < 1.0, "expected ~354 Hz, got {freq}");
     }
 
     #[test]

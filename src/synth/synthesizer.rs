@@ -31,10 +31,16 @@ impl Synthesizer {
         println!("      Total samples to render: {}", total_samples);
 
         // 2. Pre-build all PCHIP interpolators in parallel — once per hill.
-        //    Previously these were rebuilt on every (hill, bucket) call.
+        //    Log-transform intensities (ln(1 + x)) to compress dynamic range:
+        //    weak signals become more audible relative to dominant peaks.
         println!("      Pre-building {} PCHIP interpolators...", hills.len());
         let pchips: Vec<PchipInterpolator> = hills.par_iter()
-            .map(|h| PchipInterpolator::new(&h.times, &h.intensity_values))
+            .map(|h| {
+                let log_intensities: Vec<f32> = h.intensity_values.iter()
+                    .map(|&v| (1.0_f32 + v).ln())
+                    .collect();
+                PchipInterpolator::new(&h.times, &log_intensities)
+            })
             .collect();
 
         // 3. Spatial-Temporal Partitioning (Bucket Sort)

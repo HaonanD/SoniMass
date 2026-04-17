@@ -33,6 +33,7 @@ cargo test test_pchip_interpolation
 | `--min-len` | `5` | Minimum scan points for a hill to be kept |
 | `--speed` | `1.0` | Time compression factor (e.g. `60.0` = 60 min → 1 min) |
 | `--mslevel` | `all` | Filter input to `1`, `2`, or `all` |
+| `--no-export-hills` | off | Skip exporting hill data to CSV (by default, hills are exported) |
 
 ## Architecture
 
@@ -66,6 +67,15 @@ Implements Dinosaur-style **two-pointer greedy matching** in `O(N)` per scan:
   - **sin recurrence**: phase is advanced via `sin(θ+Δθ) = sinθ·cosΔθ + cosθ·sinΔθ` — only one `sin`/`cos` call per 64-sample block; inner loop is pure multiply-add.
   - Mixing (summation of all Hills) is the `+=` in this function — no separate mixer struct exists.
 - **`Synthesizer::render`** (`synthesizer.rs`): (1) pre-builds all `PchipInterpolator` objects in parallel — each constructed exactly once per Hill; (2) partitions Hills into 1-second temporal buckets (stored as index lists); (3) renders buckets in parallel via `rayon`, writing directly into the output buffer. Final buffer peak-normalized to 0.9.
+
+### Hill Export (`src/io/hill_writer.rs`)
+By default, after hill building and time normalization, hills are written to CSV alongside the WAV output:
+- `{output}_ms1_hills.csv` — MS1 hills
+- `{output}_ms2_hills.csv` — MS2 hills (DIA mode only)
+
+CSV format: `id,average_mz,time,intensity` — one row per data point. Times are already normalized (start at 0) and speed-scaled, matching the audio timeline. Use `--no-export-hills` to suppress this output.
+
+A companion Python script `tools/plot_hills_3d.py` reads a hill CSV and produces a static 3D visualization (time × m/z × intensity) with dual m/z/Hz axis labels, saved as a PNG alongside the CSV.
 
 ### DDA vs DIA in `main.rs`
 - **DDA**: only MS1 spectra are collected → one `_ms1.wav` output.
