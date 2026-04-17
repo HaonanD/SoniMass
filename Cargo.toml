@@ -1,0 +1,14 @@
+[package]
+name = "cicada"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+quick-xml = { version = "0.31", features = ["serialize"] }
+flate2 = "1.0"
+base64 = "0.21"
+thiserror = "1.0"
+mzdata = "0.63.3"
+rayon = "1.11.0"
+hound = "3.5.1"
+clap = { version = "4.5.60", features = ["derive"] }
