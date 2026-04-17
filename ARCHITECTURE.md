@@ -59,13 +59,22 @@ graph LR
         *   **核心准则**：仅进行连接操作。**严禁** 峰分裂（no `decompose`），**不进行** 同位素打分过滤。
 
 ### 3.4 `src/synth` (音频合成)
-*   **职责**：将 `Hill` 对象转化为音频采样点。
+*   **职责**：将 `Hill` 对象转化为音频采样点，并将所有 Hill 的信号混合为最终缓存。
+*   **合成原理**：每个 Hill 对应一条正弦波 `A(t) · sin(2π·f·t)`，其中频率 `f` 由 `average_mz` 线性映射（`[300, 1000] m/z → [30, 4200] Hz`），振幅包络 `A(t)` 由 PCHIP 插值得出。最终音频为所有 Hill 在每个采样点的叠加值（`+=`）。无独立 Mixer 组件——叠加直接在 `render_into_chunk` 的 `+=` 中完成。
 *   **关键组件**：
-    *   `Oscillator` (振荡器)：基于 Hill 的平均 m/z（映射为频率）和强度分布（映射为振幅）生成正弦波。
-    *   `PchipInterpolator` (PCHIP 插值)：
+    *   `PchipInterpolator` (`interpolate.rs`)：
         *   直接处理 Hill 提供的稀疏时间点。
-        *   **隐式填充**：利用 PCHIP 算法处理非均匀采样的特性，自动填补缺失 Scan 处的振幅，生成平滑的包络曲线，消除断点导致的“爆音”。
-    *   `Mixer` (混音器)：将数千个并发振荡器的信号叠加到单声道或立体声缓存中。
+        *   **隐式填充**：利用 PCHIP 算法处理非均匀采样的特性，自动填补缺失 Scan 处的振幅，生成平滑的包络曲线，消除断点导致的”爆音”。
+        *   在 `Synthesizer::render` 中对所有 Hill **并行预构建一次**，之后在各 bucket 的渲染中直接复用，避免重复构造。
+    *   `Oscillator::render_into_chunk` (`oscillator.rs`)：
+        *   接受预构建的 `&PchipInterpolator` 和 `&mut [f32]` chunk slice，直接写入输出缓存，无中间 Vec 分配。
+        *   **振幅线性插值**：PCHIP 每 `AMP_INTERP_STEP`（默认 64）个采样点求值一次，两次求值之间用线性插值填充，PCHIP 调用量减少约 64 倍。`AMP_INTERP_STEP` 是控制包络插值密度的唯一常量。
+        *   **sin 递推**：利用 `sin(θ+Δθ) = sinθ·cosΔθ + cosθ·sinΔθ` 递推相位，每 64 个样本只需初始化一次 sin/cos，内层循环为纯乘加运算，消除逐样本 `sin()` 调用。
+    *   `Synthesizer::render` (`synthesizer.rs`)：
+        *   **并行预构建插值器**：在分桶前对所有 Hill 并行构建 `PchipInterpolator`，每个 Hill 仅构建一次。
+        *   **时间分桶（Bucket Sort）**：将时间轴划分为 1 秒的桶，每个桶存储与之重叠的 Hill 索引列表。
+        *   **并行渲染**：通过 `rayon::par_chunks_mut` 并行处理各桶，每个线程直接向自己的 chunk slice 写入，无锁无分配。
+        *   最终对整体缓存做峰值归一化至 0.9。
 
 ## 4. 针对不同采集模式的策略
 
@@ -93,17 +102,11 @@ graph LR
 *   **XML 解析**：`quick-xml` 或专业质谱库。
 *   **音频编码**：`hound` (WAV 编码)。
 
-## 6. 开发路线图
+## 6. 性能设计要点
 
-1.  **第一阶段：脊柱 (The Spine)**
-    *   实现 `MzmlReader`，能够打印谱图元数据。
-    *   实现 `WavWriter`，能够生成一段静音 WAV。
-2.  **第二阶段：织网 (Hill Building)**
-    *   实现双指针逻辑的 `HillBuilder`。
-    *   使用人工造的“玩具数据”（如 5 帧简单信号）进行逻辑验证。
-3.  **第三阶段：发声 (Synthesis)**
-    *   实现从 Hill 到正弦波的合成。
-    *   打通从读取到生成的全流程流水线。
-4.  **第四阶段：打磨 (Refinement)**
-    *   加入 PCHIP 插值。
-    *   使用 `rayon` 进行性能优化。
+| 瓶颈 | 解决方案 | 收益 |
+|------|----------|------|
+| PchipInterpolator 每 (Hill, bucket) 重复构建 | 并行预构建，每 Hill 仅构建一次 | 消除 O(N×T) 重复计算 |
+| 每 (Hill, bucket) 分配中间 Vec | `render_into_chunk` 直写 chunk slice | 消除百万级堆分配 |
+| 每样本调用 PCHIP（44100次/秒/Hill） | 振幅线性插值，每 64 样本调用一次 | PCHIP 调用减少 ~64× |
+| 每样本调用 `sin()` | sin 递推关系，每块仅初始化一次 | 消除内层循环超越函数调用 |

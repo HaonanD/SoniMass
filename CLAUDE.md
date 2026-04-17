@@ -61,8 +61,11 @@ Implements Dinosaur-style **two-pointer greedy matching** in `O(N)` per scan:
 
 ### Synthesis (`src/synth/`)
 - **`PchipInterpolator`** (`interpolate.rs`): shape-preserving cubic Hermite interpolation on the sparse `(time, intensity)` points of a Hill. Guarantees non-negative output and avoids overshoot at peak edges.
-- **`Oscillator::generate_window`** (`oscillator.rs`): for a given time window, queries PCHIP for amplitude and computes `A(t) * sin(2π·f·t)`. Frequency is mapped by forward-linear: `[300, 1000] m/z → [30, 4200] Hz`.
-- **`Synthesizer::render`** (`synthesizer.rs`): divides the timeline into 1-second buckets; each bucket is rendered in parallel via `rayon`. Each Hill is registered in every bucket it overlaps. Final buffer is peak-normalized to 0.9.
+- **`Oscillator::render_into_chunk`** (`oscillator.rs`): writes a Hill's audio contribution directly into a `&mut [f32]` chunk slice (no intermediate Vec allocation). Frequency mapped by forward-linear: `[300, 1000] m/z → [30, 4200] Hz`. Two inner-loop optimizations:
+  - **Amplitude linear interpolation**: PCHIP is called every `AMP_INTERP_STEP = 64` samples; amplitude linearly interpolated between calls, reducing PCHIP evaluations ~64×. The constant `AMP_INTERP_STEP` is the sole knob controlling interpolation density.
+  - **sin recurrence**: phase is advanced via `sin(θ+Δθ) = sinθ·cosΔθ + cosθ·sinΔθ` — only one `sin`/`cos` call per 64-sample block; inner loop is pure multiply-add.
+  - Mixing (summation of all Hills) is the `+=` in this function — no separate mixer struct exists.
+- **`Synthesizer::render`** (`synthesizer.rs`): (1) pre-builds all `PchipInterpolator` objects in parallel — each constructed exactly once per Hill; (2) partitions Hills into 1-second temporal buckets (stored as index lists); (3) renders buckets in parallel via `rayon`, writing directly into the output buffer. Final buffer peak-normalized to 0.9.
 
 ### DDA vs DIA in `main.rs`
 - **DDA**: only MS1 spectra are collected → one `_ms1.wav` output.
