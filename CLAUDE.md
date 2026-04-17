@@ -62,11 +62,11 @@ Implements Dinosaur-style **two-pointer greedy matching** in `O(N)` per scan:
 
 ### Synthesis (`src/synth/`)
 - **`PchipInterpolator`** (`interpolate.rs`): shape-preserving cubic Hermite interpolation on the sparse `(time, intensity)` points of a Hill. Guarantees non-negative output and avoids overshoot at peak edges.
-- **`Oscillator::render_into_chunk`** (`oscillator.rs`): writes a Hill's audio contribution directly into a `&mut [f32]` chunk slice (no intermediate Vec allocation). Frequency mapped by forward-linear: `[300, 1000] m/z → [30, 4200] Hz`. Two inner-loop optimizations:
+- **`Oscillator::render_into_chunk`** (`oscillator.rs`): writes a Hill's audio contribution directly into a `&mut [f32]` chunk slice (no intermediate Vec allocation). Frequency mapped **logarithmically**: `[300, 1000] m/z → [30, 4200] Hz` — equal m/z intervals span equal octaves, matching human pitch perception. Midpoint 650 m/z maps to the geometric mean ~354 Hz. Two inner-loop optimizations:
   - **Amplitude linear interpolation**: PCHIP is called every `AMP_INTERP_STEP = 64` samples; amplitude linearly interpolated between calls, reducing PCHIP evaluations ~64×. The constant `AMP_INTERP_STEP` is the sole knob controlling interpolation density.
   - **sin recurrence**: phase is advanced via `sin(θ+Δθ) = sinθ·cosΔθ + cosθ·sinΔθ` — only one `sin`/`cos` call per 64-sample block; inner loop is pure multiply-add.
   - Mixing (summation of all Hills) is the `+=` in this function — no separate mixer struct exists.
-- **`Synthesizer::render`** (`synthesizer.rs`): (1) pre-builds all `PchipInterpolator` objects in parallel — each constructed exactly once per Hill; (2) partitions Hills into 1-second temporal buckets (stored as index lists); (3) renders buckets in parallel via `rayon`, writing directly into the output buffer. Final buffer peak-normalized to 0.9.
+- **`Synthesizer::render`** (`synthesizer.rs`): (1) pre-builds all `PchipInterpolator` objects in parallel — each constructed exactly once per Hill; intensities are **log-transformed** (`ln(1 + x)`) before PCHIP to compress 5–6 decade MS dynamic range and make weak signals audible relative to dominant peaks; (2) partitions Hills into 1-second temporal buckets (stored as index lists); (3) renders buckets in parallel via `rayon`, writing directly into the output buffer. Final buffer peak-normalized to 0.9.
 
 ### Hill Export (`src/io/hill_writer.rs`)
 By default, after hill building and time normalization, hills are written to CSV alongside the WAV output:
