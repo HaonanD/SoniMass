@@ -1,4 +1,4 @@
-# Cicada (原 Cicada)
+# Cicada
 
 Cicada 是一款旨在将质谱 (Mass Spectrometry, MS) 原始数据转化为音频 (Sonification) 的高性能工具。通过将化学属性映射到声学参数，它为复杂质谱数据的探索和模式识别提供了一个全新的维度。
 
