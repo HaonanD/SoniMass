@@ -41,55 +41,90 @@ Cicada **专注于处理质心化 (Centroided) 后的质谱数据**。为了将�
 4. **音频合成**
    - 将计算出的频率 $F_n$ 和连续振幅包络 $A_n(t)$ 代入正弦叠加公式，合成最终的音频波形。
 
-## 待解决的问题与挑战
+## 技术实现要点
 
-目前项目正处于开发阶段，重点攻克以下技术难点：
+### 1. m/z → 频率：对数映射
 
-1. **m/z 与频率的映射算法**：
-   - **当前默认方案（正向线性映射）**：
-     $$ F = 30 + \frac{4200 - 30}{1000 - 300} \cdot (m/z - 300) \approx 5.96 \cdot (m/z) - 1757.14 $$
-   - **备选方案 (Options)**：
-     - *反向线性映射*：反向映射更符合“高质量对应低频率”的乐器直觉。
-       $$ F = 4200 + \frac{30 - 4200}{1000 - 300} \cdot (m/z - 300) \approx -5.96 \cdot (m/z) + 5987.14 $$
-     - *反比映射*：最符合电荷泛音逻辑。
-       $$ F = 30 + (4200 - 30) \cdot \frac{\frac{1}{m/z} - \frac{1}{1000}}{\frac{1}{300} - \frac{1}{1000}} \approx \frac{1,787,143}{m/z} - 1757.14 $$
-     - *对数映射*：最符合听觉心理学。
-       $$ F = 30 \cdot \left(\frac{4200}{30}\right)^{\frac{m/z - 300}{1000 - 300}} \approx 30 \cdot (140)^{\frac{m/z - 300}{700}} $$
-     其中，$F$ 为合成声波的频率。
-2. **全谱数据的连续性与合成**：
-   - **前提条件**：本项目只处理**质心化 (Centroided)** 后的 mzML 文件。若原始数据为 Profile 模式，需预先通过 msconvert 等工具转换。
-   - **海量并发 (Massive Polyphony)**：
-     - 坚持“全保真”理念，旨在播放质谱文件中的**所有**信号。这意味着可能需要同时合成数万甚至数十万个正弦波。如何优化算法以应对这种极端的计算负载是首要挑战。
-   - **m/z 抖动与信号合并 (m/z Jitter & Merging)**：
-     - 质谱仪存在测量误差（如 20ppm），导致同一个化合物在连续的扫描（Scan）中 m/z 值会发生微小波动。若不处理，会导致单一化合物的声音分裂或产生变调杂音。
-     - **技术方向：参考 Dinosaur 的“Hill Building”逻辑**
-       - 经过对 `Dinosaur` 软件（DOI: 10.1021/acs.jproteome.6b00016）的文献分析，确定其 **“Hill Building”** 步骤（即其算法流程的第二步）是本项目所需“切片组装 (Slice Assembly)”逻辑的一个高度优化且开源的实现。
-       - **核心策略**：将 Dinosaur 的 Hill Building 作为算法范本，用于将连续 Scan 中 m/z 相近的信号点高效地连接成“轨迹链”（Hills）。
-       - **与 Dinosaur 的区别**：本项目**仅采纳**其 Hill Building 逻辑用于信号追踪。Dinosaur 的后续步骤，如山丘聚类 (Hill Clustering)、同位素模式匹配 (Isotope Pattern Matching) 和电荷反卷积 (Deconvolution)，其设计目标是为了从噪音中**识别**并**过滤**出肽段特征。这与 Cicada 旨在**“全保真”**播放所有信号（包括背景噪音）的理念相悖。
-     - **技术实现细节 (Based on Dinosaur Source Code Analysis)**：
-       - **核心匹配逻辑**：参考 `RawHillActor` 的实现，放弃复杂的二分查找，改用高效的 **双指针贪婪匹配 (Two-pointer Greedy Matching)**。利用 Scan 内 m/z 天然有序的特性，维护两个指针（Current Peak vs Active Hill），在 $O(N)$ 复杂度内完成单帧的信号归并。
-       - **抗抖动预测 (Rolling mzGuess)**：引入 `mzGuess` 变量。不单纯依赖上一帧的 m/z，而是维护一个**滚动加权平均值**来预测下一帧的位置。这能有效抵抗质谱仪的随机测量误差（Jitter），防止轨迹意外断裂。
-       - **关键差异化设计（不做减法）**：
-         - **禁止波谷分裂 (No Hill Splitting/Decompose)**：Dinosaur 的 `Hill.decompose` 会检测强度曲线的波谷并将一个峰切分为二（假设为共流出肽段）。**Cicada 严禁此操作**，必须保留波谷以体现“颤音”或“拍频”等声学特征。
-         - **移除定量过滤**：移除所有针对肽段同位素分布（Averagine model）的打分与过滤逻辑。
-       - **语言选型**：
-         - 尽管 Dinosaur 使用 Scala (Akka) 实现了高并发，但考虑到 JVM 的高内存占用 (Overhead) 和垃圾回收 (GC) 可能导致的音频生成卡顿，本项目**不建议**使用 Scala。
-         - **首选方案**：**Rust**。拥有与 C++ 持平的性能，且通过所有权机制（Ownership）保证了内存安全，适合处理 GB 级的质谱数据且无 GC 负担。
-         - **快速原型**：**Python + Numba**。若需快速验证，必须使用 Numba JIT 编译核心的 `merge` 循环，纯 Python 循环无法满足性能要求。
-3. **信号插值与合成**：
-   - **当前标准策略：PCHIP (Piecewise Cubic Hermite Interpolating Polynomial)**
-     - **理由**：
-       1. **保形性 (Shape-preserving)**：PCHIP 严格保持数据的单调性，完全避免了普通三次样条插值（Cubic Spline）在色谱峰起止处可能产生的**下冲（Undershoot，导致负强度）**和**过冲（Overshoot）**现象。
-       2. **平滑度**：相比线性插值，PCHIP 提供了一阶导数连续的平滑曲线，消除了“折线”带来的高频拉链噪音（Zipper Noise），使生成的声音更加圆润自然。
-   - **备选方案**：
-     - *线性插值*：仅用于快速调试。
-     - *三次样条插值*：需配合非负约束处理使用。
+Cicada 采用**对数映射**将 m/z 转化为频率，符合人类听觉的等程感知（等 m/z 区间对应等音程）：
+
+$$ F = 30 \cdot \left(\frac{4200}{30}\right)^{\frac{m/z - 300}{1000 - 300}} $$
+
+- 映射范围：`[300, 1000] m/z → [30, 4200] Hz`
+- 中点 650 m/z → 几何平均值 ~354 Hz
+- 超出范围的 m/z 值被 clamp 到边界
+
+### 2. 强度 → 振幅：对数压缩
+
+质谱数据的动态范围可达 5–6 个数量级。合成前对强度值进行对数压缩，使弱信号可听：
+
+$$ A = \ln(1 + \text{intensity}) $$
+
+此变换在 `Synthesizer::render` 中、构建 PCHIP 插值器前完成，不改动原始 Hill 数据。
+
+### 3. 信号追踪：Hill Building
+
+参考 Dinosaur（DOI: 10.1021/acs.jproteome.6b00016）的 Hill Building 逻辑，实现**双指针贪婪匹配**将连续 Scan 中 m/z 相近的峰连接为轨迹（Hill）：
+
+- 时间复杂度：$O(N)$（利用 Scan 内 m/z 天然有序）
+- `mz_guess` 滚动均值：抵抗质谱仪测量抖动，防止轨迹意外断裂
+- Gap Skipping：默认允许跨越 1 个缺失 Scan 继续连接
+- **不做任何过滤**：无峰分裂、无同位素打分、无电荷去卷积——保留所有信号
+
+### 4. 振幅包络：PCHIP 插值
+
+对每条 Hill 稀疏的 `(time, intensity)` 数据点应用 PCHIP（分段三次 Hermite 插值）生成连续振幅包络：
+
+- **保形性**：严格保持单调性，不产生负强度的下冲（Undershoot）
+- **平滑度**：一阶导数连续，消除线性插值的”折线”拉链噪音
+
+### 5. 合成性能优化
+
+| 优化 | 方法 | 收益 |
+|------|------|------|
+| 振幅采样 | 每 64 样本调用一次 PCHIP，中间线性插值 | PCHIP 调用量减少 ~64× |
+| 相位推进 | sin 递推关系（每块仅 1 次 sin/cos 初始化） | 消除内层循环超越函数调用 |
+| 并行合成 | Rayon 按 1 秒时间桶并行渲染 | 充分利用多核 |
+| 插值器复用 | 所有 PCHIP 对象并行预构建，每 Hill 仅构建一次 | 消除重复构造开销 |
 
 ## 安装与运行
-*(随着项目进展更新)*
+
+```bash
+# 编译
+cargo build --release
+
+# 运行（DIA 模式，默认）
+./target/release/cicada input.mzML --output my_track
+
+# DDA 模式（仅 MS1）
+./target/release/cicada input.mzML --output my_track --mode dda
+```
 
 ## 使用说明
-*(随着项目进展更新)*
+
+```
+用法：cicada <INPUT> [选项]
+
+参数：
+  <INPUT>  输入 mzML 文件路径（须为质心化数据）
+
+选项：
+  -o, --output <OUTPUT>    输出文件前缀 [默认: output]
+      --mode <MODE>        采集模式：dia 或 dda [默认: dia]
+      --ppm <PPM>          Hill 匹配 ppm 容差 [默认: 10.0]
+      --min-len <MIN_LEN>  Hill 最小数据点数 [默认: 5]
+      --speed <SPEED>      时间压缩倍率（如 60.0 将 60 分钟压缩为 1 分钟）[默认: 1.0]
+      --mslevel <MSLEVEL>  仅处理指定级别：1、2 或 all [默认: all]
+      --no-export-hills    跳过导出 Hill CSV 文件
+  -h, --help               显示帮助信息
+  -V, --version            显示版本信息
+
+输出文件：
+  DIA 模式：<output>_ms1.wav、<output>_ms2.wav
+  DDA 模式：<output>_ms1.wav
+  Hill 数据（默认开启）：<output>_ms1_hills.csv、<output>_ms2_hills.csv
+```
+
+> **前提条件**：输入文件须为**质心化 (Centroided)** 的 mzML 格式。Profile 模式数据需先通过 msconvert 等工具转换。
 
 ## 许可证
 [MIT](LICENSE)

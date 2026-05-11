@@ -31,21 +31,26 @@ graph LR
 项目将采用标准的 Rust 项目结构，划分为以下子模块：
 
 ### 3.1 `src/io` (输入/输出)
-*   **职责**：高效读取 mzML 文件，写入 WAV 文件。
+*   **职责**：高效读取 mzML 文件，写入 WAV 文件，导出 Hill 数据。
 *   **关键组件**：
     *   `MzmlReader`：
-        *   封装 `quick-xml` 解析器。
-        *   **设计模式**：采用 **同步状态机 (Synchronous State Machine)** 模式（参考 Sage 项目）。使用枚举 (`State`) 明确追踪 XML 解析上下文（如 Spectrum, Scan, BinaryDataArray），以确保复杂嵌套标签的解析健壮性。
-        *   **IO 策略**：目前采用同步 (Synchronous/Blocking) IO。对于单文件 CLI 工具，本地磁盘读取速度通常不是瓶颈，同步模型能显著降低代码复杂度（无需引入 Tokio 运行时）。
-        *   采用迭代器模式逐个读取谱图，以最小化内存占用。
-    *   `WavWriter`：处理音频数据向标准 WAV 格式（16-bit/24-bit PCM）的序列化。
+        *   封装 `mzdata` crate（专业质谱数据库），通过其迭代器接口逐谱图读取。
+        *   采用迭代器模式（`impl Iterator<Item = Result<Spectrum>>`）逐个产出谱图，最小化内存占用。
+        *   读取时将保留时间从分钟转换为秒存入 `Spectrum.time`。
+    *   `AudioWriter`：将 `Vec<f32>` 采样缓冲写入 **32-bit float 单声道 WAV** 文件（使用 `hound` crate）。
+    *   `write_hills_csv`：将 Hill 列表序列化为 CSV，格式为 `id,average_mz,time,intensity`，每个数据点一行。
 
 ### 3.2 `src/core` (数据结构)
 *   **职责**：定义全系统通用的基础数据类型。
 *   **关键结构体**：
     *   `Peak` (点)：`{ mz: f64, intensity: f32 }` - 数据的最小单位。
     *   `Spectrum` (谱图)：`{ index: usize, time: f64, peaks: Vec<Peak>, ms_level: u8 }` - 单次扫描的集合。
-    *   `Hill` (山丘/轨迹)：`{ mz_values: Vec<f64>, intensity_values: Vec<f32>, scan_indices: Vec<usize>, last_scan_index: usize, mz_guess: f64 }` - 随时间连续的信号轨迹。
+    *   `Hill` (山丘/轨迹)：稀疏离子轨迹，核心字段如下：
+        *   `id: usize` — 唯一标识符
+        *   `average_mz: f64` — 强度加权平均 m/z，用于确定合成频率
+        *   `mz_guess: f64` — 滚动平均 m/z，供 HillBuilder 热循环匹配使用
+        *   `last_scan_index: usize` — 最后一次匹配的 Scan 索引，用于 Gap 计算
+        *   `scan_indices: Vec<usize>`、`times: Vec<f64>`、`intensity_values: Vec<f32>` — 稀疏数据列（平行数组）
 
 ### 3.3 `src/algo` (核心算法)
 *   **职责**：Cicada 的“大脑”，实现信号追踪逻辑。
@@ -60,7 +65,10 @@ graph LR
 
 ### 3.4 `src/synth` (音频合成)
 *   **职责**：将 `Hill` 对象转化为音频采样点，并将所有 Hill 的信号混合为最终缓存。
-*   **合成原理**：每个 Hill 对应一条正弦波 `A(t) · sin(2π·f·t)`，其中频率 `f` 由 `average_mz` 线性映射（`[300, 1000] m/z → [30, 4200] Hz`），振幅包络 `A(t)` 由 PCHIP 插值得出。最终音频为所有 Hill 在每个采样点的叠加值（`+=`）。无独立 Mixer 组件——叠加直接在 `render_into_chunk` 的 `+=` 中完成。
+*   **合成原理**：每个 Hill 对应一条正弦波 `A(t) · sin(2π·f·t)`，其中：
+    *   频率 `f` 由 `average_mz` **对数映射**得出：`[300, 1000] m/z → [30, 4200] Hz`，公式为 $F = 30 \cdot (140)^{(m/z-300)/700}$，等 m/z 区间对应等音程。
+    *   振幅包络 `A(t)` 由 PCHIP 插值得出；强度在插值前已经过 `ln(1+x)` 对数压缩。
+    *   最终音频为所有 Hill 的叠加（`+=`）；无独立 Mixer 组件，叠加直接在 `render_into_chunk` 的写入循环中完成。
 *   **关键组件**：
     *   `PchipInterpolator` (`interpolate.rs`)：
         *   直接处理 Hill 提供的稀疏时间点。
@@ -99,7 +107,7 @@ graph LR
 *   **语言**：Rust (Edition 2021+)
 *   **并行计算**：`rayon`
     *   用于合成阶段的并行渲染（数千个正弦波的渲染是“易并行”任务）。
-*   **XML 解析**：`quick-xml` 或专业质谱库。
+*   **质谱解析**：`mzdata`（专业质谱数据库）。
 *   **音频编码**：`hound` (WAV 编码)。
 
 ## 6. 性能设计要点
