@@ -88,7 +88,7 @@ impl Oscillator {
     /// Logarithmic Mapping: Maps m/z to Frequency (Hz)
     /// Range: [300, 1000] m/z -> [30, 4200] Hz
     /// Log scale matches human pitch perception: equal m/z intervals span equal octaves.
-    fn mz_to_freq(mz: f64) -> f32 {
+    pub(crate) fn mz_to_freq(mz: f64) -> f32 {
         let min_mz = 300.0_f64;
         let max_mz = 1000.0_f64;
         let min_freq = 30.0_f64;

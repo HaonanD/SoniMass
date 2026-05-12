@@ -12,3 +12,4 @@ mzdata = "0.63.3"
 rayon = "1.11.0"
 hound = "3.5.1"
 clap = { version = "4.5.60", features = ["derive"] }
+png = "0.17"

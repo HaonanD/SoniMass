@@ -1,7 +1,9 @@
 use clap::{Parser, ValueEnum};
 use cicada::algo::hill_builder::HillBuilder;
 use cicada::io::audio_writer::AudioWriter;
+use cicada::io::heatmap_writer::{write_heatmap_png, HEATMAP_HEIGHT, HEATMAP_WIDTH};
 use cicada::io::hill_writer::write_hills_csv;
+use cicada::io::html_writer::write_heatmap_html;
 use cicada::io::mzml_reader::MzmlReader;
 use cicada::synth::synthesizer::Synthesizer;
 use cicada::core::structs::Hill;
@@ -66,6 +68,18 @@ struct Cli {
     /// Skip exporting hill data to CSV (default: hills are exported)
     #[arg(long, default_value_t = false)]
     no_export_hills: bool,
+
+    /// Skip exporting heatmap PNG and HTML viewer (default: viz is exported)
+    #[arg(long, default_value_t = false)]
+    no_export_viz: bool,
+
+    /// Start of time selection range, in minutes (default: beginning of data)
+    #[arg(long)]
+    start: Option<f64>,
+
+    /// Width of time selection range, in minutes (default: to end of data)
+    #[arg(long)]
+    width: Option<f64>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -78,6 +92,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Min Hill Length: {}", cli.min_len);
     println!("  MS Level Filter: {:?}", cli.mslevel);
     println!("  Time Speedup: {}x", cli.speed);
+
+    // Validate and compute time-range filter (convert minutes → seconds)
+    if let Some(s) = cli.start {
+        if s < 0.0 {
+            eprintln!("Error: --start must be >= 0 (got {})", s);
+            std::process::exit(1);
+        }
+    }
+    if let Some(w) = cli.width {
+        if w <= 0.0 {
+            eprintln!("Error: --width must be > 0 (got {})", w);
+            std::process::exit(1);
+        }
+    }
+    let start_s = cli.start.unwrap_or(0.0) * 60.0;
+    let end_s: Option<f64> = cli.width.map(|w| start_s + w * 60.0);
+
+    if cli.start.is_some() || cli.width.is_some() {
+        let end_label = end_s
+            .map(|e| format!("{:.2} min", e / 60.0))
+            .unwrap_or_else(|| "end".to_string());
+        println!("  Time Range: [{:.2} min, {})", start_s / 60.0, end_label);
+    }
 
     let path = Path::new(&cli.input);
     let sample_rate = 44100;
@@ -95,7 +132,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for result in reader.iter() {
         let spec = result?;
-        
+
+        // Time-range filter
+        if spec.time < start_s {
+            continue;
+        }
+        if let Some(e) = end_s {
+            if spec.time >= e {
+                continue;
+            }
+        }
+
         // Filter based on --mslevel
         match cli.mslevel {
             MsLevelFilter::Ms1 if spec.ms_level != 1 => continue,
@@ -153,11 +200,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             write_hills_csv(&hills, &hills_path)?;
         }
 
+        let out = format!("{}_ms1.wav", cli.output);
+
+        if !cli.no_export_viz {
+            let audio_duration_s = hills.iter()
+                .filter_map(|h| h.times.last().copied())
+                .fold(0.0_f64, f64::max);
+            let png_path = format!("{}_ms1_heatmap.png", cli.output);
+            let html_path = format!("{}_ms1.html", cli.output);
+            println!("      Exporting MS1 heatmap to {}...", png_path);
+            write_heatmap_png(&hills, audio_duration_s, &png_path)?;
+            println!("      Exporting MS1 HTML viewer to {}...", html_path);
+            let png_basename = Path::new(&png_path).file_name().unwrap().to_string_lossy();
+            let wav_basename = Path::new(&out).file_name().unwrap().to_string_lossy();
+            write_heatmap_html(&png_basename, &wav_basename, audio_duration_s,
+                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path)?;
+        }
+
         println!("[3/5] Synthesizing MS1 Audio...");
         let synth = Synthesizer::new(sample_rate);
         let audio = synth.render(hills);
-        
-        let out = format!("{}_ms1.wav", cli.output);
+
         println!("      Writing to {}...", out);
         let writer = AudioWriter::new(&out, sample_rate);
         writer.write_buffer(&audio)?;
@@ -183,11 +246,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             write_hills_csv(&hills, &hills_path)?;
         }
 
+        let out = format!("{}_ms2.wav", cli.output);
+
+        if !cli.no_export_viz {
+            let audio_duration_s = hills.iter()
+                .filter_map(|h| h.times.last().copied())
+                .fold(0.0_f64, f64::max);
+            let png_path = format!("{}_ms2_heatmap.png", cli.output);
+            let html_path = format!("{}_ms2.html", cli.output);
+            println!("      Exporting MS2 heatmap to {}...", png_path);
+            write_heatmap_png(&hills, audio_duration_s, &png_path)?;
+            println!("      Exporting MS2 HTML viewer to {}...", html_path);
+            let png_basename = Path::new(&png_path).file_name().unwrap().to_string_lossy();
+            let wav_basename = Path::new(&out).file_name().unwrap().to_string_lossy();
+            write_heatmap_html(&png_basename, &wav_basename, audio_duration_s,
+                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path)?;
+        }
+
         println!("[5/5] Synthesizing MS2 Audio...");
         let synth = Synthesizer::new(sample_rate);
         let audio = synth.render(hills);
-        
-        let out = format!("{}_ms2.wav", cli.output);
+
         println!("      Writing to {}...", out);
         let writer = AudioWriter::new(&out, sample_rate);
         writer.write_buffer(&audio)?;

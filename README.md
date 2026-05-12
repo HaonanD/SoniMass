@@ -86,6 +86,15 @@ $$ A = \ln(1 + \text{intensity}) $$
 | 并行合成 | Rayon 按 1 秒时间桶并行渲染 | 充分利用多核 |
 | 插值器复用 | 所有 PCHIP 对象并行预构建，每 Hill 仅构建一次 | 消除重复构造开销 |
 
+### 6. 可视化输出
+
+每次运行默认生成两个配套可视化文件：
+
+- **热图 PNG**（`*_heatmap.png`，1600×800）：将所有 Hill 光栅化为时间×m/z 二维图，强度以对数压缩后映射为 Plasma 色阶（深紫 → 洋红 → 橙色 → 亮黄）。
+- **交互式 HTML 查看器**（`*.html`）：在浏览器中打开，热图叠加坐标轴（左 m/z、右 Hz、下 Time），并内嵌 WAV 播放器；播放时白色竖线实时同步标注当前时间位置。
+
+可用 `--no-export-viz` 跳过可视化输出。
+
 ## 安装与运行
 
 ```bash
@@ -114,7 +123,10 @@ cargo build --release
       --min-len <MIN_LEN>  Hill 最小数据点数 [默认: 5]
       --speed <SPEED>      时间压缩倍率（如 60.0 将 60 分钟压缩为 1 分钟）[默认: 1.0]
       --mslevel <MSLEVEL>  仅处理指定级别：1、2 或 all [默认: all]
+      --start <START>      时间截取起点，单位分钟（默认：数据起始）
+      --width <WIDTH>      时间截取长度，单位分钟（默认：到数据末尾）
       --no-export-hills    跳过导出 Hill CSV 文件
+      --no-export-viz      跳过导出热图 PNG 和 HTML 查看器
   -h, --help               显示帮助信息
   -V, --version            显示版本信息
 
@@ -122,6 +134,8 @@ cargo build --release
   DIA 模式：<output>_ms1.wav、<output>_ms2.wav
   DDA 模式：<output>_ms1.wav
   Hill 数据（默认开启）：<output>_ms1_hills.csv、<output>_ms2_hills.csv
+  可视化（默认开启）：<output>_ms1_heatmap.png、<output>_ms1.html
+                      <output>_ms2_heatmap.png、<output>_ms2.html（DIA 模式）
 ```
 
 > **前提条件**：输入文件须为**质心化 (Centroided)** 的 mzML 格式。Profile 模式数据需先通过 msconvert 等工具转换。
