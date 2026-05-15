@@ -1,1 +1,15 @@
 /target
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Reference assets
+assets/
+
+# Runtime outputs
+*.mzML
+*.wav
+*.csv
+*.png
+*.html
