@@ -2,6 +2,7 @@
 name = "cicada"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 quick-xml = { version = "0.31", features = ["serialize"] }
