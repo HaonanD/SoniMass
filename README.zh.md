@@ -125,10 +125,11 @@ cargo build --release
       --mslevel <MSLEVEL>  仅处理指定级别：1、2 或 all [默认: all]
       --start <START>      时间截取起点，单位分钟（默认：数据起始）
       --width <WIDTH>      时间截取长度，单位分钟（默认：到数据末尾）
+      --mapping_method <N>  信号映射方案编号（正整数，默认 1；各方案说明见 mapping_method.txt）
       --no-export-hills    跳过导出 Hill CSV 文件
       --no-export-viz      跳过导出热图 PNG 和 HTML 查看器
   -h, --help               显示帮助信息
-  -V, --version            显示版本信息
+  -V, --version            显示版本信息并退出
 
 输出文件：
   DIA 模式：<output>_ms1.wav、<output>_ms2.wav
@@ -136,6 +137,7 @@ cargo build --release
   Hill 数据（默认开启）：<output>_ms1_hills.csv、<output>_ms2_hills.csv
   可视化（默认开启）：<output>_ms1_heatmap.png、<output>_ms1.html
                       <output>_ms2_heatmap.png、<output>_ms2.html（DIA 模式）
+  运行信息（始终生成）：<output>_runinfo.json
 ```
 
 > **前提条件**：输入文件须为**质心化 (Centroided)** 的 mzML 格式。Profile 模式数据需先通过 msconvert 等工具转换。

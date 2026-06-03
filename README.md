@@ -77,17 +77,20 @@ Or download the pre-built binary from the [Releases](https://github.com/HaonanD/
 | `--mslevel` | `all` | Filter input to `1`, `2`, or `all` |
 | `--start` | — | Time range start, in minutes |
 | `--width` | — | Time range length, in minutes |
+| `--mapping_method` | `1` | Signal mapping scheme (positive integer; see `mapping_method.txt`) |
 | `--no-export-hills` | — | Skip Hill CSV export |
 | `--no-export-viz` | — | Skip visualization output |
+| `--version` | — | Print version information and exit |
 
 ### Output Files
 
 ```
-DIA:  <output>_ms1.wav, <output>_ms2.wav
-DDA:  <output>_ms1.wav
-Hills (default): <output>_ms1_hills.csv, <output>_ms2_hills.csv
-Viz   (default): <output>_ms1_heatmap.png, <output>_ms1.html
-                 <output>_ms2_heatmap.png, <output>_ms2.html  (DIA only)
+DIA:     <output>_ms1.wav, <output>_ms2.wav
+DDA:     <output>_ms1.wav
+Hills (default):  <output>_ms1_hills.csv, <output>_ms2_hills.csv
+Viz   (default):  <output>_ms1_heatmap.png, <output>_ms1.html
+                  <output>_ms2_heatmap.png, <output>_ms2.html  (DIA only)
+Run info (always): <output>_runinfo.json
 ```
 
 ## Prerequisites

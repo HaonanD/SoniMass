@@ -41,7 +41,7 @@ impl std::str::FromStr for MsLevelFilter {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, about = "SoniMass: Mass Spectrometry Sonification", long_about = None)]
+#[command(author, version, about = "SoniMass: Mass Spectrometry Sonification", long_about = None)]
 struct Cli {
     /// Input mzML file path
     input: String,
@@ -78,6 +78,10 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     no_export_viz: bool,
 
+    /// Signal mapping scheme: 1 = log m/z→freq + ln(1+I) amplitude (default)
+    #[arg(long, default_value_t = 1)]
+    mapping_method: u32,
+
     /// Path to TOML config file for mapping parameters (optional; uses built-in defaults if omitted)
     #[arg(long)]
     config: Option<String>,
@@ -90,13 +94,15 @@ struct Cli {
     #[arg(long)]
     width: Option<f64>,
 
-    /// Write a run-info sidecar JSON file with CLI parameters and build version (default: enabled)
-    #[arg(long = "version", default_value_t = true, action = clap::ArgAction::Set)]
-    export_version: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+
+    if cli.mapping_method == 0 || cli.mapping_method > 1 {
+        eprintln!("Error: --mapping_method must be 1 (got {}). Only method 1 is currently supported.", cli.mapping_method);
+        std::process::exit(1);
+    }
 
     let cfg = match Config::load(cli.config.as_deref()) {
         Ok(c) => c,
@@ -113,6 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None    => println!("  Config: built-in defaults"),
     }
     println!("  Mode: {:?}", cli.mode);
+    println!("  Mapping Method: {}", cli.mapping_method);
     println!("  PPM Tolerance: {}", cli.ppm);
     println!("  Min Hill Length: {}", cli.min_len);
     println!("  MS Level Filter: {:?}", cli.mslevel);
@@ -302,7 +309,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("[5/5] Skipping MS2 Audio Synthesis");
     }
 
-    if cli.export_version {
+    {
         let mslevel_str = match cli.mslevel {
             MsLevelFilter::Ms1 => "1",
             MsLevelFilter::Ms2 => "2",
@@ -327,11 +334,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "min_len": cli.min_len,
             "speed": cli.speed,
             "mslevel": mslevel_str,
-            "no_export_hills": cli.no_export_hills,
-            "no_export_viz": cli.no_export_viz,
             "start_min": cli.start,
             "width_min": cli.width,
-            "export_version": cli.export_version,
+            "mapping_method": cli.mapping_method,
+            "no_export_hills": cli.no_export_hills,
+            "no_export_viz": cli.no_export_viz,
         });
         let runinfo_path = format!("{}_runinfo.json", cli.output);
         std::fs::write(&runinfo_path, serde_json::to_string_pretty(&info)?)?;

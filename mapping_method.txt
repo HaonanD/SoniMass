@@ -1,0 +1,42 @@
+Cicada Signal Mapping Methods
+==============================
+
+This file documents the signal mapping schemes available via --mapping_method.
+Each scheme defines how m/z maps to audio frequency, and how ion intensity maps
+to amplitude. New methods are added here as they are implemented.
+
+
+Method 1 (default)
+------------------
+
+  m/z → Frequency: Logarithmic
+
+    Range:  [300, 1000] m/z  →  [30, 4200] Hz
+    Formula:
+      t    = (m/z - 300) / (1000 - 300)
+      freq = exp( (1 - t) * ln(30) + t * ln(4200) )
+
+    Equal m/z intervals span equal octaves, matching human pitch perception.
+    m/z values outside [300, 1000] are clamped to the boundary frequencies.
+    Midpoint 650 m/z maps to the geometric mean ≈ 354 Hz.
+    The frequency bounds are adjustable via the [frequency] block in a TOML
+    config file (--config).
+
+  Intensity → Amplitude: Logarithmic compression + PCHIP + peak normalization
+
+    Step 1 — Log compression (per Hill, before interpolation):
+      log_intensity = ln(log_offset + intensity)
+      log_offset defaults to 1.0 (adjustable via [intensity].log_offset in TOML).
+      Compresses 5–6 decades of MS dynamic range so weak signals are audible.
+
+    Step 2 — PCHIP interpolation:
+      Sparse (time, log_intensity) points of each Hill are interpolated with
+      PCHIP (Piecewise Cubic Hermite Interpolating Polynomial), producing a
+      continuous, shape-preserving amplitude envelope aligned to the audio
+      sample rate (44100 Hz). Guarantees non-negative output.
+
+    Step 3 — Peak normalization (global, after mixing all Hills):
+      scale = normalize_target / max(|sample|)
+      normalize_target defaults to 0.9 (adjustable via [amplitude].normalize_target).
+      The entire mixed buffer is scaled so the loudest sample reaches 0.9.
+
