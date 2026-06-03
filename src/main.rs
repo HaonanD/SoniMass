@@ -99,8 +99,8 @@ struct Cli {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    if cli.mapping_method == 0 || cli.mapping_method > 1 {
-        eprintln!("Error: --mapping_method must be 1 (got {}). Only method 1 is currently supported.", cli.mapping_method);
+    if cli.mapping_method == 0 || cli.mapping_method > 2 {
+        eprintln!("Error: --mapping_method must be 1 or 2 (got {}). Supported: 1 (log), 2 (linear).", cli.mapping_method);
         std::process::exit(1);
     }
 
@@ -251,7 +251,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         println!("[3/5] Synthesizing MS1 Audio...");
-        let synth = Synthesizer::new(sample_rate, cfg.clone());
+        let synth = Synthesizer::new(sample_rate, cfg.clone(), cli.mapping_method);
         let audio = synth.render(hills);
 
         println!("      Writing to {}...", out);
@@ -298,7 +298,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         println!("[5/5] Synthesizing MS2 Audio...");
-        let synth = Synthesizer::new(sample_rate, cfg.clone());
+        let synth = Synthesizer::new(sample_rate, cfg.clone(), cli.mapping_method);
         let audio = synth.render(hills);
 
         println!("      Writing to {}...", out);

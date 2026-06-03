@@ -40,3 +40,22 @@ Method 1 (default)
       normalize_target defaults to 0.9 (adjustable via [amplitude].normalize_target).
       The entire mixed buffer is scaled so the loudest sample reaches 0.9.
 
+
+Method 2
+--------
+
+  m/z → Frequency: Linear
+
+    Range:  [300, 1000] m/z  →  [30, 4200] Hz
+    Formula:
+      t    = (m/z - 300) / (1000 - 300)
+      freq = 30 + t * (4200 - 30)
+
+    Equal m/z intervals span equal Hz intervals.
+    m/z values outside [300, 1000] are clamped to the boundary frequencies.
+    Midpoint 650 m/z maps to the arithmetic mean = 2115 Hz.
+    The frequency bounds are adjustable via the [frequency] block in a TOML
+    config file (--config).
+
+  Intensity → Amplitude: identical to Method 1 (log compression + PCHIP + peak normalization).
+

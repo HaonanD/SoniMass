@@ -7,11 +7,12 @@ use rayon::prelude::*;
 pub struct Synthesizer {
     sample_rate: u32,
     config: Config,
+    mapping_method: u32,
 }
 
 impl Synthesizer {
-    pub fn new(sample_rate: u32, config: Config) -> Self {
-        Self { sample_rate, config }
+    pub fn new(sample_rate: u32, config: Config, mapping_method: u32) -> Self {
+        Self { sample_rate, config, mapping_method }
     }
 
     pub fn render(&self, hills: Vec<Hill>) -> Vec<f32> {
@@ -73,6 +74,7 @@ impl Synthesizer {
         let chunk_size = (bucket_duration * self.sample_rate as f64) as usize;
         let freq_cfg = &self.config.frequency;
         let sample_rate = self.sample_rate;
+        let mapping_method = self.mapping_method;
 
         println!("      Rendering buckets in parallel...");
 
@@ -94,6 +96,7 @@ impl Synthesizer {
                             chunk,
                             chunk_start_idx,
                             freq_cfg,
+                            mapping_method,
                         );
                     }
                 }
