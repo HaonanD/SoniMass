@@ -1,3 +1,4 @@
+use crate::core::config::Config;
 use crate::core::structs::Hill;
 use crate::synth::interpolate::PchipInterpolator;
 use crate::synth::oscillator::Oscillator;
@@ -5,11 +6,12 @@ use rayon::prelude::*;
 
 pub struct Synthesizer {
     sample_rate: u32,
+    config: Config,
 }
 
 impl Synthesizer {
-    pub fn new(sample_rate: u32) -> Self {
-        Self { sample_rate }
+    pub fn new(sample_rate: u32, config: Config) -> Self {
+        Self { sample_rate, config }
     }
 
     pub fn render(&self, hills: Vec<Hill>) -> Vec<f32> {
@@ -31,13 +33,14 @@ impl Synthesizer {
         println!("      Total samples to render: {}", total_samples);
 
         // 2. Pre-build all PCHIP interpolators in parallel — once per hill.
-        //    Log-transform intensities (ln(1 + x)) to compress dynamic range:
+        //    Log-transform intensities (ln(log_offset + x)) to compress dynamic range:
         //    weak signals become more audible relative to dominant peaks.
+        let log_offset = self.config.intensity.log_offset;
         println!("      Pre-building {} PCHIP interpolators...", hills.len());
         let pchips: Vec<PchipInterpolator> = hills.par_iter()
             .map(|h| {
                 let log_intensities: Vec<f32> = h.intensity_values.iter()
-                    .map(|&v| (1.0_f32 + v).ln())
+                    .map(|&v| (log_offset + v).ln())
                     .collect();
                 PchipInterpolator::new(&h.times, &log_intensities)
             })
@@ -68,6 +71,8 @@ impl Synthesizer {
         // 4. Initialize the global audio buffer
         let mut final_buffer = vec![0.0f32; total_samples];
         let chunk_size = (bucket_duration * self.sample_rate as f64) as usize;
+        let freq_cfg = &self.config.frequency;
+        let sample_rate = self.sample_rate;
 
         println!("      Rendering buckets in parallel...");
 
@@ -85,9 +90,10 @@ impl Synthesizer {
                         Oscillator::render_into_chunk(
                             &hills[hill_idx],
                             &pchips[hill_idx],
-                            self.sample_rate,
+                            sample_rate,
                             chunk,
                             chunk_start_idx,
+                            freq_cfg,
                         );
                     }
                 }
@@ -95,18 +101,18 @@ impl Synthesizer {
 
         // 6. Normalize
         println!("      Normalizing audio...");
-        Self::normalize(&mut final_buffer);
+        Self::normalize_to(&mut final_buffer, self.config.amplitude.normalize_target);
 
         final_buffer
     }
 
-    fn normalize(buffer: &mut [f32]) {
+    fn normalize_to(buffer: &mut [f32], target: f32) {
         let max_amp = buffer.par_iter()
             .map(|&s| s.abs())
             .reduce(|| 0.0f32, f32::max);
 
         if max_amp > 1e-6 {
-            let scale = 0.9 / max_amp;
+            let scale = target / max_amp;
             buffer.par_iter_mut().for_each(|s| *s *= scale);
         }
     }

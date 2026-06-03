@@ -1,5 +1,6 @@
 use clap::{Parser, ValueEnum};
 use cicada::algo::hill_builder::HillBuilder;
+use cicada::core::config::Config;
 use cicada::io::audio_writer::AudioWriter;
 use cicada::io::heatmap_writer::{write_heatmap_png, HEATMAP_HEIGHT, HEATMAP_WIDTH};
 use cicada::io::hill_writer::write_hills_csv;
@@ -8,6 +9,10 @@ use cicada::io::mzml_reader::MzmlReader;
 use cicada::synth::synthesizer::Synthesizer;
 use cicada::core::structs::Hill;
 use std::path::Path;
+
+const PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
+const GIT_SHA: &str = env!("VERGEN_GIT_SHA");
+const GIT_DIRTY: &str = env!("VERGEN_GIT_DIRTY");
 
 #[derive(Clone, Debug, ValueEnum, PartialEq)]
 enum Mode {
@@ -36,7 +41,7 @@ impl std::str::FromStr for MsLevelFilter {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about = "SoniMass: Mass Spectrometry Sonification", long_about = None)]
+#[command(author, about = "SoniMass: Mass Spectrometry Sonification", long_about = None)]
 struct Cli {
     /// Input mzML file path
     input: String,
@@ -73,6 +78,10 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     no_export_viz: bool,
 
+    /// Path to TOML config file for mapping parameters (optional; uses built-in defaults if omitted)
+    #[arg(long)]
+    config: Option<String>,
+
     /// Start of time selection range, in minutes (default: beginning of data)
     #[arg(long)]
     start: Option<f64>,
@@ -80,13 +89,29 @@ struct Cli {
     /// Width of time selection range, in minutes (default: to end of data)
     #[arg(long)]
     width: Option<f64>,
+
+    /// Write a run-info sidecar JSON file with CLI parameters and build version (default: enabled)
+    #[arg(long = "version", default_value_t = true, action = clap::ArgAction::Set)]
+    export_version: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    
+
+    let cfg = match Config::load(cli.config.as_deref()) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Config error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     println!("Cicada (SoniMass) - Processing Started");
     println!("  Input: {}", cli.input);
+    match &cli.config {
+        Some(p) => println!("  Config: {}", p),
+        None    => println!("  Config: built-in defaults"),
+    }
     println!("  Mode: {:?}", cli.mode);
     println!("  PPM Tolerance: {}", cli.ppm);
     println!("  Min Hill Length: {}", cli.min_len);
@@ -209,16 +234,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let png_path = format!("{}_ms1_heatmap.png", cli.output);
             let html_path = format!("{}_ms1.html", cli.output);
             println!("      Exporting MS1 heatmap to {}...", png_path);
-            write_heatmap_png(&hills, audio_duration_s, &png_path)?;
+            write_heatmap_png(&hills, audio_duration_s, &png_path,
+                              &cfg.intensity, &cfg.heatmap)?;
             println!("      Exporting MS1 HTML viewer to {}...", html_path);
             let png_basename = Path::new(&png_path).file_name().unwrap().to_string_lossy();
             let wav_basename = Path::new(&out).file_name().unwrap().to_string_lossy();
             write_heatmap_html(&png_basename, &wav_basename, audio_duration_s,
-                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path)?;
+                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path, &cfg.frequency)?;
         }
 
         println!("[3/5] Synthesizing MS1 Audio...");
-        let synth = Synthesizer::new(sample_rate);
+        let synth = Synthesizer::new(sample_rate, cfg.clone());
         let audio = synth.render(hills);
 
         println!("      Writing to {}...", out);
@@ -255,16 +281,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let png_path = format!("{}_ms2_heatmap.png", cli.output);
             let html_path = format!("{}_ms2.html", cli.output);
             println!("      Exporting MS2 heatmap to {}...", png_path);
-            write_heatmap_png(&hills, audio_duration_s, &png_path)?;
+            write_heatmap_png(&hills, audio_duration_s, &png_path,
+                              &cfg.intensity, &cfg.heatmap)?;
             println!("      Exporting MS2 HTML viewer to {}...", html_path);
             let png_basename = Path::new(&png_path).file_name().unwrap().to_string_lossy();
             let wav_basename = Path::new(&out).file_name().unwrap().to_string_lossy();
             write_heatmap_html(&png_basename, &wav_basename, audio_duration_s,
-                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path)?;
+                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path, &cfg.frequency)?;
         }
 
         println!("[5/5] Synthesizing MS2 Audio...");
-        let synth = Synthesizer::new(sample_rate);
+        let synth = Synthesizer::new(sample_rate, cfg.clone());
         let audio = synth.render(hills);
 
         println!("      Writing to {}...", out);
@@ -273,6 +300,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         println!("[4/5] Skipping MS2 Track (No data or DDA mode)");
         println!("[5/5] Skipping MS2 Audio Synthesis");
+    }
+
+    if cli.export_version {
+        let mslevel_str = match cli.mslevel {
+            MsLevelFilter::Ms1 => "1",
+            MsLevelFilter::Ms2 => "2",
+            MsLevelFilter::All => "all",
+        };
+        let mode_str = match cli.mode {
+            Mode::Dia => "dia",
+            Mode::Dda => "dda",
+        };
+        let git_sha_display = if GIT_DIRTY == "true" {
+            format!("{}-dirty", GIT_SHA)
+        } else {
+            GIT_SHA.to_string()
+        };
+        let info = serde_json::json!({
+            "cicada_version": PKG_VERSION,
+            "git_sha": git_sha_display,
+            "input": cli.input,
+            "output": cli.output,
+            "mode": mode_str,
+            "ppm": cli.ppm,
+            "min_len": cli.min_len,
+            "speed": cli.speed,
+            "mslevel": mslevel_str,
+            "no_export_hills": cli.no_export_hills,
+            "no_export_viz": cli.no_export_viz,
+            "start_min": cli.start,
+            "width_min": cli.width,
+            "export_version": cli.export_version,
+        });
+        let runinfo_path = format!("{}_runinfo.json", cli.output);
+        std::fs::write(&runinfo_path, serde_json::to_string_pretty(&info)?)?;
+        println!("      Run info written to {}", runinfo_path);
     }
 
     println!("Done! 🎵");

@@ -1,3 +1,4 @@
+use crate::core::config::FrequencyConfig;
 use crate::core::structs::Hill;
 use crate::synth::interpolate::PchipInterpolator;
 use std::f32::consts::PI;
@@ -26,8 +27,9 @@ impl Oscillator {
         sample_rate: u32,
         chunk: &mut [f32],
         chunk_start_idx: usize,
+        freq_cfg: &FrequencyConfig,
     ) {
-        let f = Self::mz_to_freq(hill.average_mz);
+        let f = Self::mz_to_freq(hill.average_mz, freq_cfg);
 
         let hill_start_time = *hill.times.first().unwrap_or(&0.0);
         let hill_end_time = *hill.times.last().unwrap_or(&0.0);
@@ -85,18 +87,12 @@ impl Oscillator {
         }
     }
 
-    /// Logarithmic Mapping: Maps m/z to Frequency (Hz)
-    /// Range: [300, 1000] m/z -> [30, 4200] Hz
+    /// Logarithmic mapping: m/z → frequency (Hz).
     /// Log scale matches human pitch perception: equal m/z intervals span equal octaves.
-    pub(crate) fn mz_to_freq(mz: f64) -> f32 {
-        let min_mz = 300.0_f64;
-        let max_mz = 1000.0_f64;
-        let min_freq = 30.0_f64;
-        let max_freq = 4200.0_f64;
-
-        let clamped_mz = mz.max(min_mz).min(max_mz);
-        let t = (clamped_mz - min_mz) / (max_mz - min_mz);
-        let freq = (min_freq.ln() + t * (max_freq.ln() - min_freq.ln())).exp();
+    pub(crate) fn mz_to_freq(mz: f64, cfg: &FrequencyConfig) -> f32 {
+        let clamped_mz = mz.max(cfg.min_mz).min(cfg.max_mz);
+        let t = (clamped_mz - cfg.min_mz) / (cfg.max_mz - cfg.min_mz);
+        let freq = (cfg.min_freq.ln() + t * (cfg.max_freq.ln() - cfg.min_freq.ln())).exp();
         freq as f32
     }
 }
@@ -108,11 +104,11 @@ mod tests {
 
     #[test]
     fn test_mz_mapping() {
-        // Boundaries are unchanged
-        assert_eq!(Oscillator::mz_to_freq(300.0), 30.0);
-        assert_eq!(Oscillator::mz_to_freq(1000.0), 4200.0);
+        let cfg = FrequencyConfig::default();
+        assert_eq!(Oscillator::mz_to_freq(300.0, &cfg), 30.0);
+        assert_eq!(Oscillator::mz_to_freq(1000.0, &cfg), 4200.0);
         // Midpoint (650 m/z, t=0.5) maps to geometric mean: sqrt(30 * 4200) ≈ 354 Hz
-        let freq = Oscillator::mz_to_freq(650.0);
+        let freq = Oscillator::mz_to_freq(650.0, &cfg);
         assert!((freq - 354.0).abs() < 1.0, "expected ~354 Hz, got {freq}");
     }
 
@@ -125,7 +121,9 @@ mod tests {
         let sample_rate = 44100u32;
         let mut chunk = vec![0.0f32; sample_rate as usize];
 
-        Oscillator::render_into_chunk(&hill, &pchip, sample_rate, &mut chunk, 0);
+        Oscillator::render_into_chunk(
+            &hill, &pchip, sample_rate, &mut chunk, 0, &FrequencyConfig::default()
+        );
 
         let has_signal = chunk.iter().any(|&s| s.abs() > 0.0);
         assert!(has_signal);

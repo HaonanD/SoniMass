@@ -1,0 +1,33 @@
+# Cicada mapping configuration
+# Copy this file, edit as needed, and pass with: --config your_config.toml
+# All sections are optional — omitted fields use the built-in defaults shown here.
+
+[frequency]
+# m/z range to map to audio frequencies. Values outside this range are clamped.
+min_mz   = 300.0
+max_mz   = 1000.0
+# Frequency (Hz) range — log scale. Midpoint 650 m/z maps to sqrt(min_freq * max_freq).
+min_freq = 30.0
+max_freq = 4200.0
+
+[intensity]
+# Applied as ln(log_offset + x) to compress MS dynamic range.
+# Shared by audio amplitude envelope and heatmap color brightness.
+# Smaller values amplify weak signals relative to dominant peaks; larger values flatten dynamics.
+log_offset = 1.0
+
+[amplitude]
+# Final audio buffer is peak-normalized to this target (must be in (0, 1]).
+normalize_target = 0.9
+
+# Heatmap colormap: piecewise linear between N anchor points.
+# First anchor t must be 0.0, last must be 1.0; t values must be strictly increasing.
+# t=0 is the background/darkest color; t=1 is the brightest (peak intensity).
+# Minimum 2 anchors. Add intermediate anchors for richer color transitions.
+[[heatmap.anchors]]
+t   = 0.0
+rgb = [13, 8, 135]      # dark purple
+
+[[heatmap.anchors]]
+t   = 1.0
+rgb = [240, 249, 33]    # bright yellow

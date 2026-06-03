@@ -1,3 +1,4 @@
+use crate::core::config::{ColorAnchor, HeatmapConfig, IntensityConfig};
 use crate::core::structs::Hill;
 use png::ColorType;
 use std::fs::File;
@@ -10,12 +11,14 @@ pub fn write_heatmap_png(
     hills: &[Hill],
     audio_duration_s: f64,
     path: &str,
+    intensity_cfg: &IntensityConfig,
+    heatmap_cfg: &HeatmapConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let w = HEATMAP_WIDTH as usize;
     let h = HEATMAP_HEIGHT as usize;
 
-    let grid = rasterize(hills, audio_duration_s, w, h);
-    let rgb = colorize(&grid, w, h);
+    let grid = rasterize(hills, audio_duration_s, w, h, intensity_cfg.log_offset);
+    let rgb = colorize(&grid, w, h, &heatmap_cfg.anchors);
 
     let file = File::create(path)?;
     let mut encoder = png::Encoder::new(BufWriter::new(file), w as u32, h as u32);
@@ -27,7 +30,7 @@ pub fn write_heatmap_png(
     Ok(())
 }
 
-fn rasterize(hills: &[Hill], audio_duration_s: f64, w: usize, h: usize) -> Vec<f32> {
+fn rasterize(hills: &[Hill], audio_duration_s: f64, w: usize, h: usize, log_offset: f32) -> Vec<f32> {
     let mut grid = vec![0.0f32; w * h];
 
     if audio_duration_s <= 0.0 || hills.is_empty() {
@@ -43,7 +46,7 @@ fn rasterize(hills: &[Hill], audio_duration_s: f64, w: usize, h: usize) -> Vec<f
 
         if n == 1 {
             let x = time_to_x(hill.times[0], audio_duration_s, w);
-            let v = (1.0_f32 + hill.intensity_values[0]).ln();
+            let v = (log_offset + hill.intensity_values[0]).ln();
             let idx = y * w + x;
             if v > grid[idx] {
                 grid[idx] = v;
@@ -54,8 +57,8 @@ fn rasterize(hills: &[Hill], audio_duration_s: f64, w: usize, h: usize) -> Vec<f
         for i in 0..n - 1 {
             let t0 = hill.times[i];
             let t1 = hill.times[i + 1];
-            let v0 = (1.0_f32 + hill.intensity_values[i]).ln();
-            let v1 = (1.0_f32 + hill.intensity_values[i + 1]).ln();
+            let v0 = (log_offset + hill.intensity_values[i]).ln();
+            let v1 = (log_offset + hill.intensity_values[i + 1]).ln();
             let x0 = time_to_x(t0, audio_duration_s, w);
             let x1 = time_to_x(t1, audio_duration_s, w);
 
@@ -82,13 +85,13 @@ fn rasterize(hills: &[Hill], audio_duration_s: f64, w: usize, h: usize) -> Vec<f
     grid
 }
 
-fn colorize(grid: &[f32], w: usize, h: usize) -> Vec<u8> {
+fn colorize(grid: &[f32], w: usize, h: usize, anchors: &[ColorAnchor]) -> Vec<u8> {
     let grid_max = grid.iter().cloned().fold(0.0f32, f32::max);
     let mut rgb = vec![0u8; w * h * 3];
 
-    let bg = colormap(0.0);
+    let bg = colormap(0.0, anchors);
     for i in 0..w * h {
-        rgb[i * 3] = bg[0];
+        rgb[i * 3]     = bg[0];
         rgb[i * 3 + 1] = bg[1];
         rgb[i * 3 + 2] = bg[2];
     }
@@ -100,8 +103,8 @@ fn colorize(grid: &[f32], w: usize, h: usize) -> Vec<u8> {
     for i in 0..w * h {
         if grid[i] > 0.0 {
             let t = grid[i] / grid_max;
-            let [r, g, b] = colormap(t);
-            rgb[i * 3] = r;
+            let [r, g, b] = colormap(t, anchors);
+            rgb[i * 3]     = r;
             rgb[i * 3 + 1] = g;
             rgb[i * 3 + 2] = b;
         }
@@ -125,46 +128,39 @@ fn time_to_x(t: f64, duration: f64, w: usize) -> usize {
     x.min(w - 1)
 }
 
-/// Plasma-like colormap: dark purple → magenta → orange → bright yellow.
-/// t=0 → background (dark), t=1 → peak intensity (bright).
-fn colormap(t: f32) -> [u8; 3] {
-    const ANCHORS: [(f32, f32, f32, f32); 6] = [
-        (0.00, 13.0, 8.0, 135.0),
-        (0.20, 128.0, 19.0, 162.0),
-        (0.40, 213.0, 56.0, 109.0),
-        (0.60, 249.0, 131.0, 50.0),
-        (0.80, 253.0, 201.0, 39.0),
-        (1.00, 240.0, 249.0, 33.0),
-    ];
-
+/// Piecewise linear colormap over N anchors.
+/// t=0 → darkest, t=1 → brightest. Anchors must be sorted by t.
+fn colormap(t: f32, anchors: &[ColorAnchor]) -> [u8; 3] {
     let t = t.clamp(0.0, 1.0);
+    let n = anchors.len();
 
-    let mut seg = ANCHORS.len() - 2;
-    for i in 0..ANCHORS.len() - 1 {
-        if t <= ANCHORS[i + 1].0 {
+    let mut seg = n - 2;
+    for i in 0..n - 1 {
+        if t <= anchors[i + 1].t {
             seg = i;
             break;
         }
     }
 
-    let (t0, r0, g0, b0) = ANCHORS[seg];
-    let (t1, r1, g1, b1) = ANCHORS[seg + 1];
-    let u = if (t1 - t0).abs() > 1e-9 {
-        (t - t0) / (t1 - t0)
+    let a0 = &anchors[seg];
+    let a1 = &anchors[seg + 1];
+    let u = if (a1.t - a0.t).abs() > 1e-9 {
+        (t - a0.t) / (a1.t - a0.t)
     } else {
         0.0
     };
 
     [
-        (r0 + u * (r1 - r0)).round() as u8,
-        (g0 + u * (g1 - g0)).round() as u8,
-        (b0 + u * (b1 - b0)).round() as u8,
+        (a0.rgb[0] as f32 + u * (a1.rgb[0] as f32 - a0.rgb[0] as f32)).round() as u8,
+        (a0.rgb[1] as f32 + u * (a1.rgb[1] as f32 - a0.rgb[1] as f32)).round() as u8,
+        (a0.rgb[2] as f32 + u * (a1.rgb[2] as f32 - a0.rgb[2] as f32)).round() as u8,
     ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::{HeatmapConfig, IntensityConfig};
 
     #[test]
     fn test_mz_to_y_boundaries() {
@@ -192,8 +188,9 @@ mod tests {
 
     #[test]
     fn test_colormap_boundaries() {
-        let dark = colormap(0.0);
-        let bright = colormap(1.0);
+        let anchors = HeatmapConfig::default().anchors;
+        let dark = colormap(0.0, &anchors);
+        let bright = colormap(1.0, &anchors);
         let dark_lum: u32 = dark.iter().map(|&v| v as u32).sum();
         let bright_lum: u32 = bright.iter().map(|&v| v as u32).sum();
         assert!(bright_lum > dark_lum, "t=1 should be brighter than t=0");
@@ -202,7 +199,10 @@ mod tests {
     #[test]
     fn test_write_heatmap_png_empty() {
         let tmp = std::env::temp_dir().join("cicada_test_empty_heatmap.png");
-        let result = write_heatmap_png(&[], 60.0, tmp.to_str().unwrap());
+        let result = write_heatmap_png(
+            &[], 60.0, tmp.to_str().unwrap(),
+            &IntensityConfig::default(), &HeatmapConfig::default(),
+        );
         assert!(result.is_ok());
     }
 }

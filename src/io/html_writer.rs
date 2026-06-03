@@ -1,3 +1,4 @@
+use crate::core::config::FrequencyConfig;
 use std::fs;
 
 const GUTTER_L: u32 = 60;
@@ -12,6 +13,7 @@ pub fn write_heatmap_html(
     img_width: u32,
     img_height: u32,
     path: &str,
+    freq_cfg: &FrequencyConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let png_safe = escape_attr(png_basename);
     let wav_safe = escape_attr(wav_basename);
@@ -33,7 +35,11 @@ pub fn write_heatmap_html(
         .replace("{{GUTTER_T}}", &GUTTER_T.to_string())
         .replace("{{GUTTER_B}}", &GUTTER_B.to_string())
         .replace("{{GUTTER_R}}", &GUTTER_R.to_string())
-        .replace("{{AUDIO_DURATION_S}}", &format!("{:.3}", audio_duration_s));
+        .replace("{{AUDIO_DURATION_S}}", &format!("{:.3}", audio_duration_s))
+        .replace("{{MZ_MIN}}", &freq_cfg.min_mz.to_string())
+        .replace("{{MZ_MAX}}", &freq_cfg.max_mz.to_string())
+        .replace("{{HZ_MIN}}", &freq_cfg.min_freq.to_string())
+        .replace("{{HZ_MAX}}", &freq_cfg.max_freq.to_string());
 
     fs::write(path, html)?;
     Ok(())
@@ -111,9 +117,9 @@ const CFG = {
   gR: {{GUTTER_R}},
 };
 
-// ── m/z ↔ frequency helpers (mirrors oscillator.rs mz_to_freq) ─────────────
-const MZ_MIN = 300, MZ_MAX = 1000;
-const HZ_MIN = 30,  HZ_MAX = 4200;
+// ── m/z ↔ frequency helpers (injected from cicada config) ───────────────────
+const MZ_MIN = {{MZ_MIN}}, MZ_MAX = {{MZ_MAX}};
+const HZ_MIN = {{HZ_MIN}}, HZ_MAX = {{HZ_MAX}};
 
 function mzToHz(mz) {
   const t = (mz - MZ_MIN) / (MZ_MAX - MZ_MIN);
@@ -229,6 +235,7 @@ window.addEventListener('DOMContentLoaded', function () {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::config::FrequencyConfig;
 
     #[test]
     fn test_escape_attr() {
@@ -247,6 +254,7 @@ mod tests {
             1600,
             800,
             tmp.to_str().unwrap(),
+            &FrequencyConfig::default(),
         );
         assert!(result.is_ok());
         let content = std::fs::read_to_string(&tmp).unwrap();
