@@ -78,7 +78,9 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     no_export_viz: bool,
 
-    /// Signal mapping scheme: 1 = log m/z→freq + ln(1+I) amplitude (default)
+    /// Signal mapping scheme (1–8; see mapping_method.txt for details).
+    /// 1=log freq+ln amp (default), 2=linear freq, 3=full audible [20–20kHz],
+    /// 4=pentatonic snap, 5=chromatic snap, 6=linear amp, 7=sqrt amp, 8=inverted freq
     #[arg(long, default_value_t = 1)]
     mapping_method: u32,
 
@@ -99,8 +101,13 @@ struct Cli {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
-    if cli.mapping_method == 0 || cli.mapping_method > 2 {
-        eprintln!("Error: --mapping_method must be 1 or 2 (got {}). Supported: 1 (log), 2 (linear).", cli.mapping_method);
+    if cli.mapping_method == 0 || cli.mapping_method > 8 {
+        eprintln!(
+            "Error: --mapping_method must be 1–8 (got {}). \
+             Supported: 1 log freq+ln amp, 2 linear freq, 3 full audible, \
+             4 pentatonic, 5 chromatic, 6 linear amp, 7 sqrt amp, 8 inverted freq.",
+            cli.mapping_method
+        );
         std::process::exit(1);
     }
 

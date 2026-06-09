@@ -59,3 +59,109 @@ Method 2
 
   Intensity → Amplitude: identical to Method 1 (log compression + PCHIP + peak normalization).
 
+
+Method 3
+--------
+
+  m/z → Frequency: Logarithmic, full audible range
+
+    Range:  [300, 1000] m/z  →  [20, 20 000] Hz
+    Formula: same logarithmic formula as Method 1, but fixed to 20–20 000 Hz
+      regardless of the [frequency] config block.
+
+    Covers the entire human hearing range, giving the widest possible frequency
+    spread. Low m/z → bass/sub-bass; high m/z → treble/brilliance.
+    The [frequency] min_freq/max_freq settings are ignored for this method.
+
+  Intensity → Amplitude: identical to Method 1.
+
+
+Method 4
+--------
+
+  m/z → Frequency: Logarithmic → snapped to major pentatonic scale
+
+    Scale: A major pentatonic — A(0) B(2) C#(4) E(7) F#(9) — relative to A4 = 440 Hz.
+    Step 1: compute logarithmic frequency (same as Method 1, using config range).
+    Step 2: snap to nearest pitch whose semitone class (mod 12) is in {0, 2, 4, 7, 9}.
+
+    Result is always a consonant interval. Every ion sounds like a note in a
+    pentatonic melody — most "musical" of all methods. Dense ion regions produce
+    repeated pitches rather than beating dissonance.
+
+  Note: The Hz axis in the HTML viewer is computed from the Method 1 formula and
+  will not reflect the snapped frequencies.
+
+  Intensity → Amplitude: identical to Method 1.
+
+
+Method 5
+--------
+
+  m/z → Frequency: Logarithmic → snapped to 12-TET chromatic scale
+
+    Reference: A4 = 440 Hz (12-tone equal temperament).
+    Step 1: compute logarithmic frequency (same as Method 1).
+    Step 2: snap to nearest semitone: n = round(12 * log2(f / 440)), f_out = 440 * 2^(n/12).
+
+    More pitches available than Method 4 (12 vs 5 per octave) so the mapping
+    is more varied, but can produce minor-2nd clusters that sound dissonant.
+
+  Note: Hz axis in HTML viewer reflects Method 1 only (see note under Method 4).
+
+  Intensity → Amplitude: identical to Method 1.
+
+
+Method 6
+--------
+
+  m/z → Frequency: identical to Method 1 (logarithmic, config range).
+
+  Intensity → Amplitude: Linear (no compression)
+
+    A = intensity    (raw, before peak normalization)
+
+    No dynamic-range compression. Dominant peaks completely overpower weak
+    signals — the audio is dominated by the few highest-intensity ions.
+    Useful for highlighting the most abundant species.
+
+
+Method 7
+--------
+
+  m/z → Frequency: identical to Method 1 (logarithmic, config range).
+
+  Intensity → Amplitude: Square-root compression
+
+    A = sqrt(intensity)
+
+    Gentler compression than ln(1+I). Weak signals are more audible than in
+    Method 6 but less so than Method 1. Produces a more "open" dynamic feel
+    compared to the default logarithmic compression.
+
+
+Method 8
+--------
+
+  m/z → Frequency: Inverted logarithmic
+
+    Range:  [300, 1000] m/z  →  [4200, 30] Hz  (high ↔ low swapped)
+    Formula:
+      t    = 1 − (m/z − 300) / (1000 − 300)
+      freq = exp( (1 − t) * ln(30) + t * ln(4200) )
+
+    The frequency axis is flipped: high m/z ions produce low bass tones and
+    low m/z ions produce high treble tones — the opposite of Methods 1–7.
+    Useful for comparison or when the sample's chemistry makes low-m/z ions
+    the dominant species you want to hear prominently in the treble.
+
+  Intensity → Amplitude: identical to Method 1.
+
+
+Notes on the HTML viewer Hz axis
+---------------------------------
+The Hz tick marks on the right side of the interactive HTML viewer are always
+computed from the Method 1 logarithmic formula. They accurately reflect the
+actual audio frequencies only for Methods 1, 6, and 7. For Methods 2–5 and 8
+the Hz labels are approximate guides only.
+

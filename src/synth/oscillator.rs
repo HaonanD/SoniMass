@@ -1,6 +1,7 @@
 use crate::core::config::FrequencyConfig;
 use crate::core::structs::Hill;
 use crate::synth::interpolate::PchipInterpolator;
+use crate::synth::mapping;
 use std::f32::consts::PI;
 
 /// Number of audio samples between PCHIP amplitude evaluations.
@@ -30,11 +31,7 @@ impl Oscillator {
         freq_cfg: &FrequencyConfig,
         mapping_method: u32,
     ) {
-        let f = if mapping_method == 2 {
-            Self::mz_to_freq_linear(hill.average_mz, freq_cfg)
-        } else {
-            Self::mz_to_freq(hill.average_mz, freq_cfg)
-        };
+        let f = mapping::map_frequency(mapping_method, hill.average_mz, freq_cfg);
 
         let hill_start_time = *hill.times.first().unwrap_or(&0.0);
         let hill_end_time = *hill.times.last().unwrap_or(&0.0);
@@ -92,49 +89,12 @@ impl Oscillator {
         }
     }
 
-    /// Logarithmic mapping: m/z → frequency (Hz).
-    /// Equal m/z intervals span equal octaves, matching human pitch perception.
-    pub(crate) fn mz_to_freq(mz: f64, cfg: &FrequencyConfig) -> f32 {
-        let clamped_mz = mz.max(cfg.min_mz).min(cfg.max_mz);
-        let t = (clamped_mz - cfg.min_mz) / (cfg.max_mz - cfg.min_mz);
-        let freq = (cfg.min_freq.ln() + t * (cfg.max_freq.ln() - cfg.min_freq.ln())).exp();
-        freq as f32
-    }
-
-    /// Linear mapping: m/z → frequency (Hz).
-    /// Equal m/z intervals span equal Hz intervals.
-    pub(crate) fn mz_to_freq_linear(mz: f64, cfg: &FrequencyConfig) -> f32 {
-        let clamped_mz = mz.max(cfg.min_mz).min(cfg.max_mz);
-        let t = (clamped_mz - cfg.min_mz) / (cfg.max_mz - cfg.min_mz);
-        let freq = cfg.min_freq + t * (cfg.max_freq - cfg.min_freq);
-        freq as f32
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::structs::{Hill, Peak};
-
-    #[test]
-    fn test_mz_mapping_log() {
-        let cfg = FrequencyConfig::default();
-        assert_eq!(Oscillator::mz_to_freq(300.0, &cfg), 30.0);
-        assert_eq!(Oscillator::mz_to_freq(1000.0, &cfg), 4200.0);
-        // Midpoint (650 m/z, t=0.5) maps to geometric mean: sqrt(30 * 4200) ≈ 354 Hz
-        let freq = Oscillator::mz_to_freq(650.0, &cfg);
-        assert!((freq - 354.0).abs() < 1.0, "expected ~354 Hz, got {freq}");
-    }
-
-    #[test]
-    fn test_mz_mapping_linear() {
-        let cfg = FrequencyConfig::default();
-        assert_eq!(Oscillator::mz_to_freq_linear(300.0, &cfg), 30.0);
-        assert_eq!(Oscillator::mz_to_freq_linear(1000.0, &cfg), 4200.0);
-        // Midpoint (650 m/z, t=0.5) maps to arithmetic mean: (30 + 4200) / 2 = 2115 Hz
-        let freq = Oscillator::mz_to_freq_linear(650.0, &cfg);
-        assert!((freq - 2115.0).abs() < 1.0, "expected 2115 Hz, got {freq}");
-    }
 
     #[test]
     fn test_render_into_chunk() {

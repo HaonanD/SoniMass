@@ -1,6 +1,7 @@
 use crate::core::config::Config;
 use crate::core::structs::Hill;
 use crate::synth::interpolate::PchipInterpolator;
+use crate::synth::mapping;
 use crate::synth::oscillator::Oscillator;
 use rayon::prelude::*;
 
@@ -37,13 +38,14 @@ impl Synthesizer {
         //    Log-transform intensities (ln(log_offset + x)) to compress dynamic range:
         //    weak signals become more audible relative to dominant peaks.
         let log_offset = self.config.intensity.log_offset;
+        let method = self.mapping_method;
         println!("      Pre-building {} PCHIP interpolators...", hills.len());
         let pchips: Vec<PchipInterpolator> = hills.par_iter()
             .map(|h| {
-                let log_intensities: Vec<f32> = h.intensity_values.iter()
-                    .map(|&v| (log_offset + v).ln())
+                let transformed: Vec<f32> = h.intensity_values.iter()
+                    .map(|&v| mapping::transform_intensity(method, v, log_offset))
                     .collect();
-                PchipInterpolator::new(&h.times, &log_intensities)
+                PchipInterpolator::new(&h.times, &transformed)
             })
             .collect();
 
