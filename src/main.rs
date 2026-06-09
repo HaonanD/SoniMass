@@ -7,6 +7,7 @@ use cicada::io::hill_writer::write_hills_csv;
 use cicada::io::html_writer::write_heatmap_html;
 use cicada::io::mzml_reader::MzmlReader;
 use cicada::synth::synthesizer::Synthesizer;
+use cicada::synth::mapping;
 use cicada::core::structs::Hill;
 use std::path::Path;
 
@@ -254,7 +255,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let png_basename = Path::new(&png_path).file_name().unwrap().to_string_lossy();
             let wav_basename = Path::new(&out).file_name().unwrap().to_string_lossy();
             write_heatmap_html(&png_basename, &wav_basename, audio_duration_s,
-                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path, &cfg.frequency)?;
+                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path,
+                               &mapping::effective_freq_cfg(cli.mapping_method, &cfg.frequency))?;
         }
 
         println!("[3/5] Synthesizing MS1 Audio...");
@@ -301,7 +303,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let png_basename = Path::new(&png_path).file_name().unwrap().to_string_lossy();
             let wav_basename = Path::new(&out).file_name().unwrap().to_string_lossy();
             write_heatmap_html(&png_basename, &wav_basename, audio_duration_s,
-                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path, &cfg.frequency)?;
+                               HEATMAP_WIDTH, HEATMAP_HEIGHT, &html_path,
+                               &mapping::effective_freq_cfg(cli.mapping_method, &cfg.frequency))?;
         }
 
         println!("[5/5] Synthesizing MS2 Audio...");

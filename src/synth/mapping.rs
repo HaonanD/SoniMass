@@ -7,6 +7,20 @@
 
 use crate::core::config::FrequencyConfig;
 
+/// Returns the effective `FrequencyConfig` for visualization (HTML Hz axis).
+/// For methods that override the frequency range internally (e.g. Method 3),
+/// this returns a config reflecting the actual audio frequencies used.
+pub fn effective_freq_cfg(method: u32, cfg: &FrequencyConfig) -> FrequencyConfig {
+    match method {
+        3 => FrequencyConfig {
+            min_freq: AUDIBLE_MIN_HZ,
+            max_freq: AUDIBLE_MAX_HZ,
+            ..cfg.clone()
+        },
+        _ => cfg.clone(),
+    }
+}
+
 // ── Method 3: full audible spectrum ─────────────────────────────────────────
 const AUDIBLE_MIN_HZ: f64 = 20.0;
 const AUDIBLE_MAX_HZ: f64 = 20_000.0;
@@ -249,6 +263,28 @@ mod tests {
         let v2 = transform_intensity(1, 99.0, 1.0);
         let expected = (1.0_f32 + 99.0).ln();
         assert!((v2 - expected).abs() < 1e-4);
+    }
+
+    // ── effective_freq_cfg ────────────────────────────────────────────────────
+    #[test]
+    fn test_effective_freq_cfg_method3() {
+        let c = cfg();
+        let eff = effective_freq_cfg(3, &c);
+        assert_eq!(eff.min_freq, AUDIBLE_MIN_HZ);
+        assert_eq!(eff.max_freq, AUDIBLE_MAX_HZ);
+        // m/z range unchanged
+        assert_eq!(eff.min_mz, c.min_mz);
+        assert_eq!(eff.max_mz, c.max_mz);
+    }
+
+    #[test]
+    fn test_effective_freq_cfg_other_methods_unchanged() {
+        let c = cfg();
+        for m in [1u32, 2, 4, 5, 6, 7, 8] {
+            let eff = effective_freq_cfg(m, &c);
+            assert_eq!(eff.min_freq, c.min_freq, "method {m} should not change min_freq");
+            assert_eq!(eff.max_freq, c.max_freq, "method {m} should not change max_freq");
+        }
     }
 
     // ── mz clamping ───────────────────────────────────────────────────────────
