@@ -47,9 +47,10 @@ const PENTATONIC: [i32; 5] = [0, 2, 4, 7, 9];
 /// | 6 | Logarithmic (freq identical to method 1; amplitude differs) |
 /// | 7 | Logarithmic (freq identical to method 1; amplitude differs) |
 /// | 8 | Inverted logarithmic (high m/z → low frequency) |
+/// | 9 | Linear (freq identical to method 2; amplitude linear, no compression) |
 pub fn map_frequency(method: u32, mz: f64, cfg: &FrequencyConfig) -> f32 {
     match method {
-        2 => linear(mz, cfg, cfg.min_freq, cfg.max_freq),
+        2 | 9 => linear(mz, cfg, cfg.min_freq, cfg.max_freq),
         3 => log(mz, cfg, AUDIBLE_MIN_HZ, AUDIBLE_MAX_HZ),
         4 => snap_to_scale(log(mz, cfg, cfg.min_freq, cfg.max_freq), &PENTATONIC),
         5 => snap_to_chromatic(log(mz, cfg, cfg.min_freq, cfg.max_freq)),
@@ -64,10 +65,11 @@ pub fn map_frequency(method: u32, mz: f64, cfg: &FrequencyConfig) -> f32 {
 /// |--------|-----------|
 /// | 6 | Linear (no compression) |
 /// | 7 | Square-root compression |
+/// | 9 | Linear (no compression, same as method 6) |
 /// | _ | ln(log_offset + I) — default logarithmic compression |
 pub fn transform_intensity(method: u32, intensity: f32, log_offset: f32) -> f32 {
     match method {
-        6 => intensity,                        // linear — loud peaks dominate
+        6 | 9 => intensity,                    // linear — loud peaks dominate
         7 => intensity.max(0.0).sqrt(),        // sqrt — gentle compression
         _ => (log_offset + intensity).ln(),    // ln(1+I) — default
     }

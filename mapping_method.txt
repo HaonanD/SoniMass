@@ -158,10 +158,34 @@ Method 8
   Intensity → Amplitude: identical to Method 1.
 
 
+Method 9
+--------
+
+  m/z → Frequency: Linear (identical to Method 2)
+
+    Range:  [300, 1000] m/z  →  [30, 4200] Hz
+    Formula:
+      t    = (m/z - 300) / (1000 - 300)
+      freq = 30 + t * (4200 - 30)
+
+    Equal m/z intervals span equal Hz intervals.
+    The frequency bounds are adjustable via the [frequency] block in a TOML
+    config file (--config).
+
+  Intensity → Amplitude: Linear (identical to Method 6)
+
+    A = intensity    (raw, before peak normalization)
+
+    No dynamic-range compression. Dominant peaks completely overpower weak
+    signals. Combined with a linear frequency axis, this method gives a fully
+    linear treatment of both dimensions — useful as a reference or for samples
+    where the dominant species should be heard at their true relative loudness.
+
+
 Notes on the HTML viewer Hz axis
 ---------------------------------
 The Hz tick marks on the right side of the interactive HTML viewer are always
 computed from the Method 1 logarithmic formula. They accurately reflect the
-actual audio frequencies only for Methods 1, 6, and 7. For Methods 2–5 and 8
-the Hz labels are approximate guides only.
+actual audio frequencies only for Methods 1, 6, and 7. For Methods 2–5, 8,
+and 9 the Hz labels are approximate guides only.
 
